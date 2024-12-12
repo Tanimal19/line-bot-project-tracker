@@ -3,3 +3,4 @@
 
 **/secret.py
 .env.yaml
+firebase-key.json
