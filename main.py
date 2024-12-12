@@ -1,4 +1,5 @@
 import functions_framework
+import os
 
 from google.cloud.firestore import Client
 from google.cloud.firestore_bundle import FirestoreBundle
