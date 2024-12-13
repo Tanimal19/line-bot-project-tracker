@@ -64,11 +64,7 @@ class Database:
         return
 
     def update_project(
-        self,
-        line_id: str,
-        project_name: str,
-        project_description: str,
-        is_active: bool,
+        self, line_id: str, project_name: str, project_description: str, is_active: bool
     ):
         project_ref = self.get_project_ref(line_id, project_name)
         if project_ref is None:
@@ -104,7 +100,6 @@ class Database:
             },
             merge=True,
         )
-
         return
 
     def get_all_projects(self, line_id: str):
@@ -118,6 +113,8 @@ class Database:
         projects = list(projects)
         if len(projects) == 0:
             return None
+
+        projects = [project.to_dict() for project in projects]
 
         return projects
 
@@ -137,31 +134,30 @@ class Database:
         return project_list[0].reference
 
     # DIALOGUE
-    def add_new_dialogue(
-        self,
-        line_id: str,
-        user_ask: str,
-        bot_response: str,
-        project_name: str,
+    def generate_dialogue_cache(
+        self, line_id: str, user_ask: str, bot_response: str, project_name: str
     ):
         project_ref = self.get_project_ref(line_id, project_name)
         if project_ref is None:
             return
 
+        return {
+            "user_ask": user_ask,
+            "bot_response": bot_response,
+            "project": project_ref,
+            "create_at": firestore.SERVER_TIMESTAMP,
+        }
+
+    def store_dialogues(self, line_id: str, dialogue_cache_list: list):
         dialogue_ref = (
             self.client.collection("users")
             .document(line_id)
             .collection("dialogues")
             .document()
         )
-        dialogue_ref.set(
-            {
-                "user_ask": user_ask,
-                "bot_response": bot_response,
-                "project": project_ref,
-                "create_at": firestore.SERVER_TIMESTAMP,
-            }
-        )
+        for dialogue_cache in dialogue_cache_list:
+            dialogue_ref.set(dialogue_cache)
+
         return
 
     def get_project_dialogues(self, line_id: str, project_name: str):
@@ -180,5 +176,7 @@ class Database:
         dialogues = list(dialogues)
         if len(dialogues) == 0:
             return None
+
+        dialogues = [dialogue.to_dict() for dialogue in dialogues]
 
         return dialogues

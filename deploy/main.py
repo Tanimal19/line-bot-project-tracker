@@ -1,5 +1,5 @@
 import os
-from enum import Enum
+import json
 
 from openai import OpenAI
 from linebot.v3 import WebhookHandler
@@ -14,10 +14,14 @@ from linebot.v3.messaging import (
     MessagingApi,
     ReplyMessageRequest,
     TextMessage,
+    FlexMessage,
 )
 
+
 from db_utils import Database
-from context import UserContextManager, UserContext, Status
+from user_context import *
+from request_type import *
+from build import *
 
 
 MODE = os.environ.get("MODE", "development")
@@ -42,9 +46,10 @@ openai_client = OpenAI(
     project=OPENAI_PROJECT_ID,
 )
 db = Database()
+user_context_manager = UserContextManager()
 
 
-# @functions_framework.http
+# @functions_framework.http  # comment out this line on gcloud
 def hello_bot(request):
     try:
         signature = request.headers["X-Line-Signature"]
@@ -54,167 +59,207 @@ def hello_bot(request):
     except InvalidSignatureError:
         print("not request from LINE")
 
-    print(request)
+    user_context_manager.remove_expired_contexts()
+
     return "OK"
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def message_text(event):
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        user_message = event.message.text
-        user_id = event.source.user_id
-
-        # if first time user
-        if not db.if_user_exist(user_id):
-            db.add_new_user(user_id)
-
-        # get user context
-        user_context = UserContextManager().get_or_create_context(user_id)
-
-        if user_context.current_state == Status.HANDLE_REQUEST:
-
-            # change state to ADD_PROJECT
-            if user_message == RequestType.ADD_PROJECT:
-                user_context.update_state(Status.ADD_PROJECT)
-                line_bot_api.reply_message_with_http_info(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="Please tell me about your idea!")],
-                    )
-                )
-                return
-
-            # change state to IN_DIALOG
-            elif user_message.startswith(RequestType.SET_PROJECT):
-                user_context.update_state(Status.IN_DIALOG)
-                project_name = user_message.split(" ")[1]
-                user_context.update_project(project_name)
-                line_bot_api.reply_message_with_http_info(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[
-                            TextMessage(text="Okay, let's talk about " + project_name)
-                        ],
-                    )
-                )
-                return
-
-            # return project list
-            elif user_message == RequestType.GET_PROJECTS:
-                projects = db.get_all_projects(user_id)
-                # format flex message
-                project_list = []
-                for project in projects:
-                    project_list.append(
-                        {
-                            "type": "button",
-                            "style": "secondary",
-                            "height": "sm",
-                            "action": {
-                                "type": "postback",
-                                "label": RequestType.SET_PROJECT
-                                + " "
-                                + project["name"],
-                                "data": RequestType.SET_PROJECT + " " + project["name"],
-                            },
-                        }
-                    )
-
-                line_bot_api.reply_message_with_http_info(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[
-                            {
-                                "type": "bubble",
-                                "body": {
-                                    "type": "box",
-                                    "layout": "vertical",
-                                    "contents": [
-                                        {
-                                            "type": "text",
-                                            "text": "Your ideas:",
-                                            "weight": "bold",
-                                            "size": "lg",
-                                        }
-                                    ],
-                                },
-                                "footer": {
-                                    "type": "box",
-                                    "layout": "vertical",
-                                    "spacing": "sm",
-                                    "contents": project_list,
-                                    "flex": 0,
-                                },
-                            }
-                        ],
-                    )
-                )
-                return
-
-            # return prject idea based on user's previous idea
-            elif user_message == RequestType.GET_IDEA:
-                projects = db.get_all_projects(user_id)
-                idea_context = ""
-                completion = openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "Use english." + idea_context},
-                        {"role": "user", "content": "Please give me one project idea in the format of name: short description:"},
-                    ],
-                )
-                openai_response = completion.choices[0].message.content
-
-            else:
-                line_bot_api.reply_message_with_http_info(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="Please specify a valid option.")],
-                    )
-                )
-                return
-
-        elif user_context.current_state == Status.ADD_PROJECT:
-
-            if user_message == 
+    try:
+        handle_message(event)
+    except Exception as e:
+        print("error:", e)
+        send_line_text_message(event, "error occurred.")
 
 
-            completion = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "Use english."},
-                    {"role": "user", "content": event.message.text},
-                ],
-            )
-            openai_response = completion.choices[0].message.content
+def handle_message(event):
+    uid = event.source.user_id
 
-            line_bot_api.reply_message_with_http_info(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=openai_response)],
-                )
+    # if first time user
+    if not db.if_user_exist(uid):
+        db.add_new_user(uid)
+
+    # get user context
+    user_context: UserContext = user_context_manager.get_or_create_context(uid)
+
+    (request_type, user_message) = parse_request(event.message.text)
+
+    if user_context.current_state == Status.HANDLE_REQUEST:
+
+        # generate project idea (by openai)
+        if request_type == RequestType.GET_IDEA:
+            if MODE == "development":
+                print("entry: HANDLE_REQUEST, GET_IDEA")
+
+            projects = db.get_all_projects(uid)
+            prompt = build_get_idea_prompt(projects)
+            openai_response = get_openai_response(prompt)
+            project_name, project_description = get_project_info(openai_response)
+            send_line_text_message(
+                event,
+                f"Here is your new project idea: {project_name}\n{project_description}",
             )
             return
 
+        # return list of projects with name and description
+        elif request_type == RequestType.GET_PROJECTS:
+            if MODE == "development":
+                print("entry: HANDLE_REQUEST, GET_PROJECTS")
+
+            projects = db.get_all_projects(uid)
+            if projects == None:
+                send_line_text_message(event, "seems like you don't have any projects")
+                return
+
+            project_list = []
+            for project in projects:
+                project_list.append(build_project_flex(project["name"]))
+            project_flex_list = build_project_list_flex(project_list)
+            send_line_flex_message(event, project_flex_list)
+            return
+
+        # add new project
+        elif request_type == RequestType.ADD_PROJECT:
+            if MODE == "development":
+                print("entry: HANDLE_REQUEST, ADD_PROJECT")
+
+            user_context.update_state(Status.ADD_PROJECT)
+            send_line_text_message(event, "tell me about you idea")
+            return
+
+        # set project context
+        elif request_type == RequestType.SET_PROJECT:
+            if MODE == "development":
+                print("entry: HANDLE_REQUEST, SET_PROJECT")
+
+            user_context.update_state(Status.IN_DIALOG)
+            project_name = user_message
+            user_context.update_project(project_name)
+            send_line_text_message(event, f"okay, let's discuss about {project_name}")
+            return
+
+        # act like a normal chatbot
+        else:
+            if MODE == "development":
+                print("entry: HANDLE_REQUEST, NORMAL_CHAT")
+
+            openai_response = get_openai_response(
+                [{"role": "user", "content": user_message}]
+            )
+            send_line_text_message(event, openai_response)
+            return
+
+    elif user_context.current_state == Status.ADD_PROJECT:
+
+        # add new project into database
+        if request_type == None:
+            if MODE == "development":
+                print("entry: ADD_PROJECT, ADD_PROJECT")
+
+            # parse project name and description
+            prompt = build_parse_project_info_prompt(user_message)
+            openai_response = get_openai_response(prompt)
+            project_name, project_description = get_project_info(openai_response)
+
+            db.add_new_project(uid, project_name, project_description)
+
+            # switch to dialog state, so user can directly discuss about the project
+            user_context.update_state(Status.IN_DIALOG)
+            user_context.update_project(project_name)
+            send_line_text_message(
+                event, f"project [{project_name}] added successfully.\nlet's discuss."
+            )
+            return
+
+        # cancel adding project
+        else:
+            if MODE == "development":
+                print("entry: ADD_PROJECT, CANCEL_ADD_PROJECT")
+
+            user_context.update_state(Status.HANDLE_REQUEST)
+            send_line_text_message(event, "do nothing.")
+            return
+
+    elif user_context.current_state == Status.IN_DIALOG:
+
+        # continue dialog
+        if request_type == None:
+            if MODE == "development":
+                print("entry: IN_DIALOG, CONTINUE_DIALOG")
+
+            context = build_project_context(user_context.dialogue_cache_list)
+            prompt = [
+                {"role": "system", "content": context},
+                {
+                    "role": "user",
+                    "content": user_message,
+                },
+            ]
+            openai_response = get_openai_response(prompt)
+            dialogue_cache = db.generate_dialogue_cache(
+                uid, user_message, openai_response, user_context.current_project
+            )
+            user_context.add_dialog_cache(dialogue_cache)
+            send_line_text_message(event, openai_response)
+            return
+
+        # leave dialog state, store dialogues, and update project description
+        else:
+            if MODE == "development":
+                print("entry: IN_DIALOG, LEAVE_DIALOG")
+
+            user_context.update_state(Status.HANDLE_REQUEST)
+            db.store_dialogues(uid, user_context.dialogue_cache_list)
+
+            # gerenate new project description
+            context = build_project_context(user_context.dialogue_cache_list)
+            prompt = build_parse_project_info_prompt(context)
+            openai_response = get_openai_response(prompt)
+            project_name, project_description = get_project_info(openai_response)
+            db.update_project(
+                uid, user_context.current_project, project_description, False
+            )
+            send_line_text_message(event, "discuss end.\nproject description updated.")
+            return
 
 
-class RequestType(Enum):
-    ADD_PROJECT = 0
-    SET_PROJECT = 1
-    GET_PROJECTS = 2
-    GET_IDEA = 3
+def get_openai_response(prompt):
+    completion = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=prompt,
+        max_tokens=200,
+    )
 
-def parse_request_type(message: str):
-    if message.startswith("[ADD_PROJECT]"):
-        return RequestType.ADD_PROJECT
+    if MODE == "development":
+        print("\nprompt:\n", prompt)
+        print("\nopenai response:\n", completion.choices[0].message.content)
 
-    elif message.startswith("[SET_PROJECT]"):
-        return RequestType.SET_PROJECT
+    return completion.choices[0].message.content
 
-    elif message.startswith("[GET_PROJECTS]"):
-        return RequestType.GET_PROJECTS
 
-    elif message.startswith("[GET_IDEA]"):
-        return RequestType.GET_IDEA
+def get_project_info(openai_response):
+    obj = json.loads(openai_response)
+    return obj["name"], obj["description"]
 
+
+def send_line_text_message(event, text_message):
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message_with_http_info(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=text_message)],
+            )
+        )
+
+
+def send_line_flex_message(event, flex):
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message_with_http_info(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[FlexMessage(altText="flex message", contents=flex)],
+            )
+        )
