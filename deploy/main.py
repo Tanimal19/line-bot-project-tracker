@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 
 from openai import OpenAI
 from linebot.v3 import WebhookHandler
@@ -16,7 +17,7 @@ from linebot.v3.messaging import (
 )
 
 from db_utils import Database
-from context import UserContextManager, UserContext, Status, RequestType
+from context import UserContextManager, UserContext, Status
 
 
 MODE = os.environ.get("MODE", "development")
@@ -73,6 +74,8 @@ def message_text(event):
         user_context = UserContextManager().get_or_create_context(user_id)
 
         if user_context.current_state == Status.HANDLE_REQUEST:
+
+            # change state to ADD_PROJECT
             if user_message == RequestType.ADD_PROJECT:
                 user_context.update_state(Status.ADD_PROJECT)
                 line_bot_api.reply_message_with_http_info(
@@ -83,6 +86,7 @@ def message_text(event):
                 )
                 return
 
+            # change state to IN_DIALOG
             elif user_message.startswith(RequestType.SET_PROJECT):
                 user_context.update_state(Status.IN_DIALOG)
                 project_name = user_message.split(" ")[1]
@@ -97,6 +101,7 @@ def message_text(event):
                 )
                 return
 
+            # return project list
             elif user_message == RequestType.GET_PROJECTS:
                 projects = db.get_all_projects(user_id)
                 # format flex message
@@ -148,19 +153,33 @@ def message_text(event):
                 )
                 return
 
+            # return prject idea based on user's previous idea
             elif user_message == RequestType.GET_IDEA:
-                pass
+                projects = db.get_all_projects(user_id)
+                idea_context = ""
+                completion = openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "Use english." + idea_context},
+                        {"role": "user", "content": "Please give me one project idea in the format of name: short description:"},
+                    ],
+                )
+                openai_response = completion.choices[0].message.content
 
             else:
                 line_bot_api.reply_message_with_http_info(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text="Please choose an option.")],
+                        messages=[TextMessage(text="Please specify a valid option.")],
                     )
                 )
                 return
 
-        else:
+        elif user_context.current_state == Status.ADD_PROJECT:
+
+            if user_message == 
+
+
             completion = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -177,3 +196,25 @@ def message_text(event):
                 )
             )
             return
+
+
+
+class RequestType(Enum):
+    ADD_PROJECT = 0
+    SET_PROJECT = 1
+    GET_PROJECTS = 2
+    GET_IDEA = 3
+
+def parse_request_type(message: str):
+    if message.startswith("[ADD_PROJECT]"):
+        return RequestType.ADD_PROJECT
+
+    elif message.startswith("[SET_PROJECT]"):
+        return RequestType.SET_PROJECT
+
+    elif message.startswith("[GET_PROJECTS]"):
+        return RequestType.GET_PROJECTS
+
+    elif message.startswith("[GET_IDEA]"):
+        return RequestType.GET_IDEA
+

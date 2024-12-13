@@ -5,16 +5,9 @@ TIMEOUT = 30
 
 
 class Status(Enum):
-    HANDLE_REQUEST = "HANDLE_REQUEST"
-    ADD_PROJECT = "ADD_PROJECT"
-    IN_DIALOG = "IN_DIALOG"
-
-
-class RequestType(Enum):
-    ADD_PROJECT = "[ADD_PROJCET]"
-    SET_PROJECT = "[SET_PROJECT]"
-    GET_PROJECTS = "[GET_PROJECTS]"
-    GET_IDEA = "[GET_IDEA]"
+    HANDLE_REQUEST = 0
+    ADD_PROJECT = 1
+    IN_DIALOG = 1
 
 
 class UserContext:
