@@ -111,7 +111,9 @@ def handle_message(event):
 
             projects = db.get_all_projects(uid)
             if projects == None:
-                send_line_text_message(event, "seems like you don't have any projects")
+                send_line_text_message(
+                    event, "seems like you don't have any projects, try add one!"
+                )
                 return
 
             project_list = []
@@ -127,7 +129,7 @@ def handle_message(event):
                 print("HANDLE_REQUEST > ADD_PROJECT")
 
             user_context.update_state(Status.ADD_PROJECT)
-            send_line_text_message(event, "tell me about you idea")
+            send_line_text_message(event, "tell me about you idea!")
             return
 
         # set project context
@@ -179,7 +181,7 @@ def handle_message(event):
             user_context.update_project(project_name, context)
             send_line_text_message(
                 event,
-                f"project [{project_name}] added successfully.\nnow we can discuss about {project["name"]}!",
+                f"project [{project_name}] added successfully.\nnow we can discuss about {project_name}!",
             )
             return
 
