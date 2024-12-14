@@ -1,5 +1,6 @@
 import os
 import json
+import pprint
 
 from openai import OpenAI
 from linebot.v3 import WebhookHandler
@@ -15,13 +16,15 @@ from linebot.v3.messaging import (
     ReplyMessageRequest,
     TextMessage,
     FlexMessage,
+    FlexContainer,
 )
 
 
 from db_utils import Database
 from user_context import *
 from request_type import *
-from build import *
+from build_flex import *
+from prompt import *
 
 
 MODE = os.environ.get("MODE", "development")
@@ -35,7 +38,6 @@ if MODE == "production":
 else:
     from secret import CHANNEL_ACCESS_TOKEN, CHANNEL_SECRET
     from secret import OPENAI_API_KEY, OPENAI_ORG_ID, OPENAI_PROJECT_ID
-    import functions_framework
 
 
 handler = WebhookHandler(CHANNEL_SECRET)
@@ -49,7 +51,6 @@ db = Database()
 user_context_manager = UserContextManager()
 
 
-# @functions_framework.http  # comment out this line on gcloud
 def hello_bot(request):
     try:
         signature = request.headers["X-Line-Signature"]
@@ -59,7 +60,7 @@ def hello_bot(request):
     except InvalidSignatureError:
         print("not request from LINE")
 
-    user_context_manager.remove_expired_contexts()
+    user_context_manager.remove_expired_contexts(db)
 
     return "OK"
 
@@ -68,8 +69,9 @@ def hello_bot(request):
 def message_text(event):
     try:
         handle_message(event)
+
     except Exception as e:
-        print("error:", e)
+        print("error:\n", e)
         send_line_text_message(event, "error occurred.")
 
 
@@ -90,7 +92,7 @@ def handle_message(event):
         # generate project idea (by openai)
         if request_type == RequestType.GET_IDEA:
             if MODE == "development":
-                print("entry: HANDLE_REQUEST, GET_IDEA")
+                print("HANDLE_REQUEST > GET_IDEA")
 
             projects = db.get_all_projects(uid)
             prompt = build_get_idea_prompt(projects)
@@ -105,7 +107,7 @@ def handle_message(event):
         # return list of projects with name and description
         elif request_type == RequestType.GET_PROJECTS:
             if MODE == "development":
-                print("entry: HANDLE_REQUEST, GET_PROJECTS")
+                print("HANDLE_REQUEST > GET_PROJECTS")
 
             projects = db.get_all_projects(uid)
             if projects == None:
@@ -122,7 +124,7 @@ def handle_message(event):
         # add new project
         elif request_type == RequestType.ADD_PROJECT:
             if MODE == "development":
-                print("entry: HANDLE_REQUEST, ADD_PROJECT")
+                print("HANDLE_REQUEST > ADD_PROJECT")
 
             user_context.update_state(Status.ADD_PROJECT)
             send_line_text_message(event, "tell me about you idea")
@@ -131,19 +133,26 @@ def handle_message(event):
         # set project context
         elif request_type == RequestType.SET_PROJECT:
             if MODE == "development":
-                print("entry: HANDLE_REQUEST, SET_PROJECT")
+                print("HANDLE_REQUEST > SET_PROJECT")
 
-            user_context.update_state(Status.IN_DIALOG)
-            project_name = user_message
-            user_context.update_project(project_name)
-            send_line_text_message(event, f"okay, let's discuss about {project_name}")
+            user_context.update_state(Status.IN_DIALOGUE)
+
+            # initialize project context
+            project = db.get_project(uid, user_message)
+            old_dialogue_list = db.get_project_dialogues(uid, user_message)
+            context = build_project_context(
+                project["name"], project["description"], old_dialogue_list
+            )
+            user_context.update_project(project["name"], context)
+
+            prompt = build_context_prompt(context, type="summary")
+            openai_response = get_openai_response(prompt)
+
+            send_line_text_message(event, openai_response)
             return
 
         # act like a normal chatbot
         else:
-            if MODE == "development":
-                print("entry: HANDLE_REQUEST, NORMAL_CHAT")
-
             openai_response = get_openai_response(
                 [{"role": "user", "content": user_message}]
             )
@@ -155,7 +164,7 @@ def handle_message(event):
         # add new project into database
         if request_type == None:
             if MODE == "development":
-                print("entry: ADD_PROJECT, ADD_PROJECT")
+                print("ADD_PROJECT > ADD_PROJECT")
 
             # parse project name and description
             prompt = build_parse_project_info_prompt(user_message)
@@ -164,61 +173,59 @@ def handle_message(event):
 
             db.add_new_project(uid, project_name, project_description)
 
-            # switch to dialog state, so user can directly discuss about the project
-            user_context.update_state(Status.IN_DIALOG)
-            user_context.update_project(project_name)
+            # switch to dialogue state, so user can directly discuss about the project
+            user_context.update_state(Status.IN_DIALOGUE)
+            context = build_project_context(project_name, project_description, [])
+            user_context.update_project(project_name, context)
             send_line_text_message(
-                event, f"project [{project_name}] added successfully.\nlet's discuss."
+                event,
+                f"project [{project_name}] added successfully.\nnow we can discuss about {project["name"]}!",
             )
             return
 
         # cancel adding project
         else:
             if MODE == "development":
-                print("entry: ADD_PROJECT, CANCEL_ADD_PROJECT")
+                print("ADD_PROJECT > CANCEL_ADD_PROJECT")
 
             user_context.update_state(Status.HANDLE_REQUEST)
             send_line_text_message(event, "do nothing.")
             return
 
-    elif user_context.current_state == Status.IN_DIALOG:
+    elif user_context.current_state == Status.IN_DIALOGUE:
 
-        # continue dialog
+        # continue dialogue
         if request_type == None:
             if MODE == "development":
-                print("entry: IN_DIALOG, CONTINUE_DIALOG")
+                print("IN_DIALOGUE > CONTINUE_DIALOGUE")
 
-            context = build_project_context(user_context.dialogue_cache_list)
-            prompt = [
-                {"role": "system", "content": context},
-                {
-                    "role": "user",
-                    "content": user_message,
-                },
-            ]
-            openai_response = get_openai_response(prompt)
-            dialogue_cache = db.generate_dialogue_cache(
-                uid, user_message, openai_response, user_context.current_project
+            prompt = build_context_prompt(
+                user_context.current_project_context, user_message, type="response"
             )
-            user_context.add_dialog_cache(dialogue_cache)
+            openai_response = get_openai_response(prompt)
+            dialogue = db.generate_dialogue_dict(
+                uid, user_message, openai_response, user_context.current_project_name
+            )
+            user_context.add_new_dialog(dialogue)
             send_line_text_message(event, openai_response)
             return
 
-        # leave dialog state, store dialogues, and update project description
+        # leave dialogue state, store dialogues, and update project description
         else:
             if MODE == "development":
-                print("entry: IN_DIALOG, LEAVE_DIALOG")
+                print("IN_DIALOGUE > LEAVE_DIALOGUE")
 
             user_context.update_state(Status.HANDLE_REQUEST)
-            db.store_dialogues(uid, user_context.dialogue_cache_list)
+            db.store_dialogues(uid, user_context.new_dialogue_list)
 
             # gerenate new project description
-            context = build_project_context(user_context.dialogue_cache_list)
-            prompt = build_parse_project_info_prompt(context)
+            prompt = build_parse_project_info_prompt(
+                user_context.current_project_context
+            )
             openai_response = get_openai_response(prompt)
             project_name, project_description = get_project_info(openai_response)
             db.update_project(
-                uid, user_context.current_project, project_description, False
+                uid, user_context.current_project_name, project_description, False
             )
             send_line_text_message(event, "discuss end.\nproject description updated.")
             return
@@ -228,12 +235,12 @@ def get_openai_response(prompt):
     completion = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=prompt,
-        max_tokens=200,
+        max_tokens=150,
     )
 
-    if MODE == "development":
-        print("\nprompt:\n", prompt)
-        print("\nopenai response:\n", completion.choices[0].message.content)
+    # if MODE == "development":
+    #     print("\nprompt:\n", prompt)
+    #     print("\nopenai response:\n", completion.choices[0].message.content)
 
     return completion.choices[0].message.content
 
@@ -260,6 +267,11 @@ def send_line_flex_message(event, flex):
         line_bot_api.reply_message_with_http_info(
             ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[FlexMessage(altText="flex message", contents=flex)],
+                messages=[
+                    FlexMessage(
+                        altText="flex message",
+                        contents=FlexContainer.from_dict(flex),
+                    )
+                ],
             )
         )

@@ -103,20 +103,20 @@ class Database:
         return
 
     def get_all_projects(self, line_id: str):
-        projects = (
+        project_list = (
             self.client.collection("users")
             .document(line_id)
             .collection("projects")
             .order_by("last_used", direction="DESCENDING")
             .stream()
         )
-        projects = list(projects)
-        if len(projects) == 0:
+        project_list = list(project_list)
+        if len(project_list) == 0:
             return None
 
-        projects = [project.to_dict() for project in projects]
+        project_list = [project.to_dict() for project in project_list]
 
-        return projects
+        return project_list
 
     def get_project_ref(self, line_id: str, project_name: str):
         project_list = (
@@ -133,8 +133,16 @@ class Database:
 
         return project_list[0].reference
 
+    def get_project(self, line_id: str, project_name: str):
+        project_ref = self.get_project_ref(line_id, project_name)
+        if project_ref is None:
+            return None
+
+        project = project_ref.get().to_dict()
+        return project
+
     # DIALOGUE
-    def generate_dialogue_cache(
+    def generate_dialogue_dict(
         self, line_id: str, user_ask: str, bot_response: str, project_name: str
     ):
         project_ref = self.get_project_ref(line_id, project_name)
@@ -148,15 +156,14 @@ class Database:
             "create_at": firestore.SERVER_TIMESTAMP,
         }
 
-    def store_dialogues(self, line_id: str, dialogue_cache_list: list):
-        dialogue_ref = (
-            self.client.collection("users")
-            .document(line_id)
-            .collection("dialogues")
-            .document()
+    def store_dialogues(self, line_id: str, dialogue_list: list):
+        batch = self.client.batch()
+        dialogue_collection_ref = (
+            self.client.collection("users").document(line_id).collection("dialogues")
         )
-        for dialogue_cache in dialogue_cache_list:
-            dialogue_ref.set(dialogue_cache)
+        for dialogue in dialogue_list:
+            batch.set(dialogue_collection_ref.document(), dialogue)
+        batch.commit()
 
         return
 
@@ -165,7 +172,7 @@ class Database:
         if project_ref is None:
             return
 
-        dialogues = (
+        dialogue_list = (
             self.client.collection("users")
             .document(line_id)
             .collection("dialogues")
@@ -173,10 +180,10 @@ class Database:
             .order_by("create_at", direction="DESCENDING")
             .stream()
         )
-        dialogues = list(dialogues)
-        if len(dialogues) == 0:
+        dialogue_list = list(dialogue_list)
+        if len(dialogue_list) == 0:
             return None
 
-        dialogues = [dialogue.to_dict() for dialogue in dialogues]
+        dialogue_list = [dialogue.to_dict() for dialogue in dialogue_list]
 
-        return dialogues
+        return dialogue_list
