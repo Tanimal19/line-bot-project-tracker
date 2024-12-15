@@ -1,7 +1,17 @@
 # Line-bot-project-tracker
 
 A simple project tracker using line bot.  
+
+line id: @229uywbz  
+
+
+
+
+
 Design concept & development log [here](https://tanimalx.notion.site/Line-Pre-assessment-15957b83ce5b8076ba8de5f45839909c?pvs=4).
+
+
+
   
 ## Features
 - organized your project ideas
@@ -9,5 +19,5 @@ Design concept & development log [here](https://tanimalx.notion.site/Line-Pre-as
 - keep tracking your projects by daily notification
 - 🚧 check & export your ideas in multiple formats
 
-## Tutorial
+## Demo
 
