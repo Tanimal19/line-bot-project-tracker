@@ -1,6 +1,6 @@
 import os
 import json
-import pprint
+from typing import Tuple
 
 from openai import OpenAI
 from linebot.v3 import WebhookHandler
@@ -17,13 +17,14 @@ from linebot.v3.messaging import (
     TextMessage,
     FlexMessage,
     FlexContainer,
+    ShowLoadingAnimationRequest,
 )
 
 
 from db_utils import Database
 from user_context import *
 from request_type import *
-from build_flex import *
+from line_assest import *
 from prompt import *
 
 
@@ -60,8 +61,6 @@ def hello_bot(request):
     except InvalidSignatureError:
         print("not request from LINE")
 
-    user_context_manager.remove_expired_contexts(db)
-
     return "OK"
 
 
@@ -76,14 +75,16 @@ def message_text(event):
 
 
 def handle_message(event):
-    uid = event.source.user_id
+    send_line_loading_animation(event)
+
+    user_id = event.source.user_id
 
     # if first time user
-    if not db.if_user_exist(uid):
-        db.add_new_user(uid)
+    if not db.is_user_exist(user_id):
+        db.add_user(user_id)
 
     # get user context
-    user_context: UserContext = user_context_manager.get_or_create_context(uid)
+    user_context: UserContext = user_context_manager.get_or_create_context(user_id)
 
     (request_type, user_message) = parse_request(event.message.text)
 
@@ -94,13 +95,14 @@ def handle_message(event):
             if MODE == "development":
                 print("HANDLE_REQUEST > GET_IDEA")
 
-            projects = db.get_all_projects(uid)
-            prompt = build_get_idea_prompt(projects)
+            project_list = db.get_project_list(user_id)
+            prompt = prompt_for_generate_idea(project_list)
             openai_response = get_openai_response(prompt)
-            project_name, project_description = get_project_info(openai_response)
+            project_name, project_description = parse_project_info(openai_response)
+
             send_line_text_message(
                 event,
-                f"Here is your new project idea: {project_name}\n{project_description}",
+                f"專案發想: {project_name}\n{project_description}",
             )
             return
 
@@ -109,18 +111,20 @@ def handle_message(event):
             if MODE == "development":
                 print("HANDLE_REQUEST > GET_PROJECTS")
 
-            projects = db.get_all_projects(uid)
-            if projects == None:
+            project_list = db.get_project_list(user_id)
+            if project_list == None:
                 send_line_text_message(
-                    event, "seems like you don't have any projects, try add one!"
+                    event, "看起來你還沒有任何專案，趕快新增一個吧！"
                 )
                 return
 
-            project_list = []
-            for project in projects:
-                project_list.append(build_project_flex(project["name"]))
-            project_flex_list = build_project_list_flex(project_list)
-            send_line_flex_message(event, project_flex_list)
+            project_flex_list = [
+                build_project_flex(project["name"]) for project in project_list
+            ]
+
+            send_line_flex_message(
+                event, build_project_list_flex("你目前的專案:", project_flex_list)
+            )
             return
 
         # add new project
@@ -129,7 +133,32 @@ def handle_message(event):
                 print("HANDLE_REQUEST > ADD_PROJECT")
 
             user_context.update_state(Status.ADD_PROJECT)
-            send_line_text_message(event, "tell me about you idea!")
+            send_line_text_message(
+                event, "請說明欲新增的專案內容。\n如果要取消動作，請輸入'cancel'。"
+            )
+            return
+
+        # remove project
+        elif request_type == RequestType.REMOVE_PROJECT:
+            if MODE == "development":
+                print("HANDLE_REQUEST > REMOVE_PROJECT")
+
+            # show list of projects
+            project_list = db.get_project_list(user_id)
+            if project_list == None:
+                send_line_text_message(
+                    event, "喔喔，看起來你還沒有任何專案，趕快新增一個吧！"
+                )
+                return
+
+            user_context.update_state(Status.REMOVE_PROJECT)
+            project_flex_list = [
+                build_project_flex(project["name"]) for project in project_list
+            ]
+
+            send_line_flex_message(
+                event, build_project_list_flex("請選擇欲移除的專案:", project_flex_list)
+            )
             return
 
         # set project context
@@ -140,14 +169,14 @@ def handle_message(event):
             user_context.update_state(Status.IN_DIALOGUE)
 
             # initialize project context
-            project = db.get_project(uid, user_message)
-            old_dialogue_list = db.get_project_dialogues(uid, user_message)
-            context = build_project_context(
-                project["name"], project["description"], old_dialogue_list
+            project = db.get_project_dict(user_id, user_message)
+            history_dialogue_list = db.get_project_dialogue_list(user_id, user_message)
+            project_context = build_project_context(
+                project["name"], project["description"], history_dialogue_list
             )
-            user_context.update_project(project["name"], context)
+            user_context.update_project(project["name"], project_context)
 
-            prompt = build_context_prompt(context, type="summary")
+            prompt = prompt_for_project_discuss(project_context, type="summary")
             openai_response = get_openai_response(prompt)
 
             send_line_text_message(event, openai_response)
@@ -169,29 +198,55 @@ def handle_message(event):
                 print("ADD_PROJECT > ADD_PROJECT")
 
             # parse project name and description
-            prompt = build_parse_project_info_prompt(user_message)
+            prompt = prompt_for_parse_project_info(user_message)
             openai_response = get_openai_response(prompt)
-            project_name, project_description = get_project_info(openai_response)
+            project_name, project_description = parse_project_info(openai_response)
 
-            db.add_new_project(uid, project_name, project_description)
+            db.add_project(user_id, project_name, project_description)
 
             # switch to dialogue state, so user can directly discuss about the project
             user_context.update_state(Status.IN_DIALOGUE)
-            context = build_project_context(project_name, project_description, [])
-            user_context.update_project(project_name, context)
+            project_context = build_project_context(
+                project_name, project_description, []
+            )
+            user_context.update_project(project_name, project_context)
+
             send_line_text_message(
                 event,
-                f"project [{project_name}] added successfully.\nnow we can discuss about {project_name}!",
+                f"成功新增專案: {project_name}\n馬上開始討論{project_name}吧！",
             )
             return
 
         # cancel adding project
-        else:
+        elif request_type == RequestType.CANCEL:
             if MODE == "development":
                 print("ADD_PROJECT > CANCEL_ADD_PROJECT")
 
             user_context.update_state(Status.HANDLE_REQUEST)
-            send_line_text_message(event, "do nothing.")
+            send_line_text_message(event, "取消新增專案")
+            return
+
+    elif user_context.current_state == Status.REMOVE_PROJECT:
+
+        # remove select project into database
+        if request_type == RequestType.SET_PROJECT:
+            if MODE == "development":
+                print("REMOVE_PROJECT > REMOVE_PROJECT")
+
+            user_context.update_state(Status.HANDLE_REQUEST)
+
+            db.remove_project(user_id, user_message)
+
+            send_line_text_message(event, f"成功移除專案: {user_message}")
+            return
+
+        # cancel adding project
+        elif request_type == RequestType.CANCEL:
+            if MODE == "development":
+                print("REMOVE_PROJECT > CANCEL_REMOVE_PROJECT")
+
+            user_context.update_state(Status.HANDLE_REQUEST)
+            send_line_text_message(event, "取消移除專案")
             return
 
     elif user_context.current_state == Status.IN_DIALOGUE:
@@ -201,14 +256,13 @@ def handle_message(event):
             if MODE == "development":
                 print("IN_DIALOGUE > CONTINUE_DIALOGUE")
 
-            prompt = build_context_prompt(
+            prompt = prompt_for_project_discuss(
                 user_context.current_project_context, user_message, type="response"
             )
             openai_response = get_openai_response(prompt)
-            dialogue = db.generate_dialogue_dict(
-                uid, user_message, openai_response, user_context.current_project_name
-            )
+            dialogue = db.generate_dialogue_dict(user_message, openai_response)
             user_context.add_new_dialog(dialogue)
+
             send_line_text_message(event, openai_response)
             return
 
@@ -218,26 +272,33 @@ def handle_message(event):
                 print("IN_DIALOGUE > LEAVE_DIALOGUE")
 
             user_context.update_state(Status.HANDLE_REQUEST)
-            db.store_dialogues(uid, user_context.new_dialogue_list)
+            db.add_project_dialogues(
+                user_id,
+                user_context.current_project_name,
+                user_context.new_dialogue_list,
+            )
 
             # gerenate new project description
-            prompt = build_parse_project_info_prompt(
-                user_context.current_project_context
-            )
+            prompt = prompt_for_parse_project_info(user_context.current_project_context)
             openai_response = get_openai_response(prompt)
-            project_name, project_description = get_project_info(openai_response)
+            project_name, project_description = parse_project_info(openai_response)
             db.update_project(
-                uid, user_context.current_project_name, project_description, False
+                user_id, user_context.current_project_name, project_description, False
             )
-            send_line_text_message(event, "discuss end.\nproject description updated.")
+
+            send_line_text_message(event, "結束討論專案，專案簡介已更新！")
             return
 
+    else:
+        send_line_text_message(event, "無效的指令。")
+        return
 
-def get_openai_response(prompt):
+
+def get_openai_response(prompt) -> str:
     completion = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=prompt,
-        max_tokens=150,
+        max_tokens=400,
     )
 
     # if MODE == "development":
@@ -247,12 +308,12 @@ def get_openai_response(prompt):
     return completion.choices[0].message.content
 
 
-def get_project_info(openai_response):
+def parse_project_info(openai_response: str) -> Tuple[str, str]:
     obj = json.loads(openai_response)
     return obj["name"], obj["description"]
 
 
-def send_line_text_message(event, text_message):
+def send_line_text_message(event, text_message: str) -> None:
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message_with_http_info(
@@ -263,7 +324,7 @@ def send_line_text_message(event, text_message):
         )
 
 
-def send_line_flex_message(event, flex):
+def send_line_flex_message(event, flex: dict) -> None:
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message_with_http_info(
@@ -276,4 +337,12 @@ def send_line_flex_message(event, flex):
                     )
                 ],
             )
+        )
+
+
+def send_line_loading_animation(event) -> None:
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.show_loading_animation_with_http_info(
+            ShowLoadingAnimationRequest(chatId=event.source.user_id, loadingSeconds=5)
         )
