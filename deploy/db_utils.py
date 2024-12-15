@@ -37,6 +37,11 @@ class Database:
         )
         return
 
+    def get_user_list(self) -> List[str]:
+        query_stream = self.client.collection("users").stream()
+        user_list = [doc.id for doc in query_stream]
+        return user_list
+
     # PROJECT
     def add_project(
         self, user_id: str, project_name: str, project_description: str

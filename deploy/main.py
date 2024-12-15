@@ -4,7 +4,6 @@ from typing import Tuple
 
 from openai import OpenAI
 from linebot.v3 import WebhookHandler
-from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.webhooks import (
     MessageEvent,
     TextMessageContent,
@@ -14,6 +13,7 @@ from linebot.v3.messaging import (
     ApiClient,
     MessagingApi,
     ReplyMessageRequest,
+    PushMessageRequest,
     TextMessage,
     FlexMessage,
     FlexContainer,
@@ -58,8 +58,19 @@ def hello_bot(request):
         body = request.get_data(as_text=True)
         handler.handle(body, signature)
 
-    except InvalidSignatureError:
-        print("not request from LINE")
+    except Exception as e:
+        # chech if is refresh request (by google cloud scheduler)
+        if request.args.get("refresh") == "true":
+
+            # send notification to all users
+            users = db.get_user_list()
+            for user_id in users:
+                post_project_notification(user_id)
+
+            user_context_manager.cleanup_all(db)
+            return "refreshed"
+
+        print("error:\n", e)
 
     return "OK"
 
@@ -311,6 +322,31 @@ def get_openai_response(prompt) -> str:
 def parse_project_info(openai_response: str) -> Tuple[str, str]:
     obj = json.loads(openai_response)
     return obj["name"], obj["description"]
+
+
+def post_project_notification(user_id: str) -> None:
+    project_list = db.get_project_list(user_id)
+    latest_project = project_list[-1] if project_list else None
+    least_used_project = project_list[0] if project_list else None
+
+    notification = "今天有新點子嗎？\n"
+    if latest_project is not None:
+        notification += f"要不要來繼續討論: {latest_project['name']}？\n"
+    if (
+        least_used_project is not None
+        and least_used_project["name"] != latest_project["name"]
+    ):
+        notification += f"或是再次探索: {least_used_project['name']}的潛力？\n"
+    notification += "快來看看你的專案吧 :)"
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.push_message_with_http_info(
+            PushMessageRequest(
+                to=user_id,
+                messages=[TextMessage(text=notification)],
+            )
+        )
 
 
 def send_line_text_message(event, text_message: str) -> None:
