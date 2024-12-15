@@ -116,7 +116,14 @@ class Database:
         if project_ref is None:
             return
 
+        dialogues_ref = project_ref.collection("dialogues").list_documents()
+        batch = self.client.batch()
+        for doc in dialogues_ref.stream():
+            batch.delete(doc.reference)
+        batch.commit()
+
         project_ref.delete()
+
         return
 
     def update_project(
