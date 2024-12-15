@@ -300,9 +300,8 @@ def handle_message(event):
             send_line_text_message(event, "結束討論專案，專案簡介已更新！")
             return
 
-    else:
-        send_line_text_message(event, "無效的指令。")
-        return
+    send_line_text_message(event, "無效的指令。")
+    return
 
 
 def get_openai_response(prompt) -> str:
