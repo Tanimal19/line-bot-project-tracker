@@ -3,6 +3,7 @@ import json
 from typing import Tuple
 
 from openai import OpenAI
+from linebot.exceptions import InvalidSignatureError
 from linebot.v3 import WebhookHandler
 from linebot.v3.webhooks import (
     MessageEvent,
@@ -53,24 +54,24 @@ user_context_manager = UserContextManager()
 
 
 def hello_bot(request):
+    # chech if is refresh request (by google cloud scheduler)
+    if request.args.get("refresh") == "true":
+        # send notification to all users
+        users = db.get_user_list()
+        for user_id in users:
+            post_project_notification(user_id)
+
+        user_context_manager.cleanup_all(db)
+
+        return "refreshed"
+
     try:
         signature = request.headers["X-Line-Signature"]
         body = request.get_data(as_text=True)
         handler.handle(body, signature)
 
-    except Exception as e:
-        # chech if is refresh request (by google cloud scheduler)
-        if request.args.get("refresh") == "true":
-
-            # send notification to all users
-            users = db.get_user_list()
-            for user_id in users:
-                post_project_notification(user_id)
-
-            user_context_manager.cleanup_all(db)
-            return "refreshed"
-
-        print("error:\n", e)
+    except InvalidSignatureError:
+        print("Not Line request")
 
     return "OK"
 
