@@ -32,7 +32,7 @@ def parse_request(message: str):
         project_name = message.split("]")[1]
         return (RequestType.SET_PROJECT, project_name)
 
-    elif message.startswith("cancel"):
+    elif message.startswith("取消"):
         return (RequestType.CANCEL, None)
 
     else:

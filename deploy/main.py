@@ -54,12 +54,16 @@ user_context_manager = UserContextManager()
 
 
 def hello_bot(request):
+    print(request)
+
     # chech if is refresh request (by google cloud scheduler)
     if request.args.get("refresh") == "true":
         # send notification to all users
         users = db.get_user_list()
         for user_id in users:
-            post_project_notification(user_id)
+            if user_id == "test-user":
+                continue
+            push_project_notification(user_id)
 
         user_context_manager.cleanup_all(db)
 
@@ -279,7 +283,7 @@ def handle_message(event):
             return
 
         # leave dialogue state, store dialogues, and update project description
-        else:
+        elif request_type == RequestType.CANCEL:
             if MODE == "development":
                 print("IN_DIALOGUE > LEAVE_DIALOGUE")
 
@@ -301,7 +305,7 @@ def handle_message(event):
             send_line_text_message(event, "結束討論專案，專案簡介已更新！")
             return
 
-    send_line_text_message(event, "無效的指令。")
+    send_line_text_message(event, "無效的指令 :(")
     return
 
 
@@ -324,20 +328,18 @@ def parse_project_info(openai_response: str) -> Tuple[str, str]:
     return obj["name"], obj["description"]
 
 
-def post_project_notification(user_id: str) -> None:
+def push_project_notification(user_id: str) -> None:
     project_list = db.get_project_list(user_id)
-    latest_project = project_list[-1] if project_list else None
-    least_used_project = project_list[0] if project_list else None
 
-    notification = "今天有新點子嗎？\n"
-    if latest_project is not None:
-        notification += f"要不要來繼續討論: {latest_project['name']}？\n"
-    if (
-        least_used_project is not None
-        and least_used_project["name"] != latest_project["name"]
-    ):
-        notification += f"或是再次探索: {least_used_project['name']}的潛力？\n"
-    notification += "快來看看你的專案吧 :)"
+    notification = "嗨，今天有新點子嗎？\n"
+    if project_list is None:
+        notification += "你還沒有任何專案，趕快新增一個吧！"
+    elif len(project_list) == 1:
+        notification += f'快來討論 {project_list[-1]["name"]} 吧！'
+    else:
+        notification += f"你目前已經累積了 {len(project_list)} 個專案想法！\n"
+        notification += f'最近討論的專案: {project_list[-1]["name"]}\n'
+        notification += f'最久沒動的專案: {project_list[0]["name"]}'
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
