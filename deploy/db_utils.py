@@ -23,6 +23,23 @@ class Database:
     def __init__(self):
         self.client = firestore.client()
 
+    def delete_collection(
+        self, collection_ref: CollectionReference, batch_size=50
+    ) -> None:
+        if batch_size <= 0:
+            return
+
+        docs = collection_ref.limit(batch_size).stream()
+        deleted = 0
+
+        for doc in docs:
+            print(f"deleting doc {doc.id} from {collection_ref.id}")
+            doc.reference.delete()
+            deleted += 1
+
+        if deleted >= batch_size:
+            return self.delete_collection(collection_ref, batch_size)
+
     # USER
     def is_user_exist(self, user_id: str) -> bool:
         user: DocumentSnapshot = self.client.collection("users").document(user_id).get()
@@ -116,12 +133,8 @@ class Database:
         if project_ref is None:
             return
 
-        dialogues_ref = project_ref.collection("dialogues").list_documents()
-        batch = self.client.batch()
-        for doc in dialogues_ref.stream():
-            batch.delete(doc.reference)
-        batch.commit()
-
+        dialogues_ref = project_ref.collection("dialogues")
+        self.delete_collection(dialogues_ref)
         project_ref.delete()
 
         return

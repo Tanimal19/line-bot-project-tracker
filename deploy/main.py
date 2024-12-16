@@ -380,5 +380,5 @@ def send_line_loading_animation(event) -> None:
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.show_loading_animation_with_http_info(
-            ShowLoadingAnimationRequest(chatId=event.source.user_id, loadingSeconds=5)
+            ShowLoadingAnimationRequest(chatId=event.source.user_id, loadingSeconds=10)
         )
