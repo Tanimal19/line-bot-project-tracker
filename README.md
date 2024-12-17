@@ -15,5 +15,6 @@
 開發日誌: [notion](https://tanimalx.notion.site/Line-Pre-assessment-15957b83ce5b8076ba8de5f45839909c?pvs=4)
 
 ## 操作方法
-Demo Video: [youtube](https://youtube.com/shorts/1Hmi0QSTR5Y?feature=share)  
+Demo Video: [youtube (shorts)](https://www.youtube.com/shorts/EQRYWOKQ2_Y)  
+youtube automatically it to shorts, since it's under 3min :(  
 
