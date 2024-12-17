@@ -1,4 +1,4 @@
-# Line Bot Project Tracker
+# Line Bot Project Tracker v0.1
 
 幫你管理各種 side project 點子的小幫手  
   
