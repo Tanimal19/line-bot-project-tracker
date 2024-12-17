@@ -5,9 +5,10 @@ class RequestType(Enum):
     ADD_PROJECT = 0
     REMOVE_PROJECT = 1
     GET_PROJECTS = 2
-    GET_IDEA = 3
-    SET_PROJECT = 4
-    CANCEL = 5
+    GET_DIALOGUES = 3
+    GET_IDEA = 4
+    SET_PROJECT = 5
+    CANCEL = 6
 
 
 def parse_request(message: str):
@@ -25,6 +26,9 @@ def parse_request(message: str):
     elif message.startswith("[GET_PROJECTS]"):
         return (RequestType.GET_PROJECTS, None)
 
+    elif message.startswith("[GET_DIALOGUES]"):
+        return (RequestType.GET_DIALOGUES, None)
+
     elif message.startswith("[GET_IDEA]"):
         return (RequestType.GET_IDEA, None)
 
@@ -32,7 +36,7 @@ def parse_request(message: str):
         project_name = message.split("]")[1]
         return (RequestType.SET_PROJECT, project_name)
 
-    elif message.startswith("取消"):
+    elif message.startswith("[CANCEL]"):
         return (RequestType.CANCEL, None)
 
     else:

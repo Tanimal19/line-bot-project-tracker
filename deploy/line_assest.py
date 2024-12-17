@@ -39,37 +39,4 @@ def build_project_list_flex(title: str, project_flex_list: List[Dict]) -> dict:
     }
 
 
-RICHMENU_ID = "richmenu-d093eb83684baf5943d16b92bfb6e721"
-
-RICHMENU_JSON = {
-    "size": {"width": 1200, "height": 405},
-    "selected": False,
-    "name": "richmenu-1",
-    "chatBarText": "選單",
-    "areas": [
-        {
-            "bounds": {"x": 0, "y": 0, "width": 400, "height": 200},
-            "action": {"type": "message", "label": "新增專案", "text": "[ADD_PROJECT]"},
-        },
-        {
-            "bounds": {"x": 0, "y": 200, "width": 400, "height": 200},
-            "action": {
-                "type": "message",
-                "label": "移除專案",
-                "text": "[REMOVE_PROJECT]",
-            },
-        },
-        {
-            "bounds": {"x": 400, "y": 0, "width": 400, "height": 400},
-            "action": {
-                "type": "message",
-                "label": "討論專案",
-                "text": "[GET_PROJECTS]",
-            },
-        },
-        {
-            "bounds": {"x": 800, "y": 0, "width": 400, "height": 400},
-            "action": {"type": "message", "label": "獲取靈感", "text": "[GET_IDEA]"},
-        },
-    ],
-}
+RICHMENU_ID = "richmenu-d25f6eb2380178b7e3a01a1723283f69"

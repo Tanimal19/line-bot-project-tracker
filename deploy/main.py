@@ -143,6 +143,13 @@ def handle_message(event):
             )
             return
 
+        elif request_type == RequestType.GET_DIALOGUES:
+            if MODE == "development":
+                print("HANDLE_REQUEST > GET_DIALOGUES")
+
+            send_line_text_message(event, "抱歉，此功能還未開放 :(")
+            return
+
         # add new project
         elif request_type == RequestType.ADD_PROJECT:
             if MODE == "development":
@@ -196,12 +203,11 @@ def handle_message(event):
             send_line_text_message(event, openai_response)
             return
 
-        # act like a normal chatbot
-        else:
-            openai_response = get_openai_response(
-                [{"role": "user", "content": user_message}]
-            )
-            send_line_text_message(event, openai_response)
+        elif request_type == RequestType.CANCEL:
+            if MODE == "development":
+                print("HANDLE_REQUEST > CANCEL")
+
+            send_line_text_message(event, "沒有可以取消的動作 :(")
             return
 
     elif user_context.current_state == Status.ADD_PROJECT:
