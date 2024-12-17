@@ -156,7 +156,9 @@ def handle_message(event):
                 print("HANDLE_REQUEST > ADD_PROJECT")
 
             user_context.update_state(Status.ADD_PROJECT)
-            send_line_text_message(event, "請說明欲新增的專案內容。")
+            send_line_text_message(
+                event, "請說明欲新增的專案內容\n說多一點可以讓 bot 更容易理解喔~"
+            )
             return
 
         # remove project

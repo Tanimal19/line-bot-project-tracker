@@ -1,11 +1,11 @@
 {
   "size": { "width": 1200, "height": 810 },
   "selected": false,
-  "name": "default-menu",
+  "name": "richmenu-1",
   "chatBarText": "選單",
   "areas": [
     {
-      "bounds": { "x": 0, "y": 0, "width": 400, "height": 400 },
+      "bounds": { "x": 0, "y": 0, "width": 400, "height": 450 },
       "action": {
         "type": "message",
         "label": "查看所有專案",
@@ -13,7 +13,7 @@
       }
     },
     {
-      "bounds": { "x": 400, "y": 0, "width": 400, "height": 400 },
+      "bounds": { "x": 400, "y": 0, "width": 400, "height": 450 },
       "action": {
         "type": "message",
         "label": "獲取靈感",
@@ -21,7 +21,7 @@
       }
     },
     {
-      "bounds": { "x": 800, "y": 0, "width": 400, "height": 400 },
+      "bounds": { "x": 800, "y": 0, "width": 400, "height": 450 },
       "action": {
         "type": "message",
         "label": "查看所有對話",
@@ -29,7 +29,7 @@
       }
     },
     {
-      "bounds": { "x": 0, "y": 400, "width": 400, "height": 400 },
+      "bounds": { "x": 0, "y": 450, "width": 400, "height": 360 },
       "action": {
         "type": "message",
         "label": "新增專案",
@@ -37,7 +37,7 @@
       }
     },
     {
-      "bounds": { "x": 400, "y": 400, "width": 400, "height": 400 },
+      "bounds": { "x": 400, "y": 450, "width": 400, "height": 360 },
       "action": {
         "type": "message",
         "label": "移除專案",
@@ -45,7 +45,7 @@
       }
     },
     {
-      "bounds": { "x": 800, "y": 400, "width": 400, "height": 400 },
+      "bounds": { "x": 800, "y": 450, "width": 400, "height": 360 },
       "action": {
         "type": "message",
         "label": "取消",

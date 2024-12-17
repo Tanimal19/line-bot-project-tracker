@@ -39,4 +39,4 @@ def build_project_list_flex(title: str, project_flex_list: List[Dict]) -> dict:
     }
 
 
-RICHMENU_ID = "richmenu-d25f6eb2380178b7e3a01a1723283f69"
+RICHMENU_ID = "richmenu-98647900e802ac8a90d800d12e10e65b"
