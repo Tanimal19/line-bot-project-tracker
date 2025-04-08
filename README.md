@@ -1,3 +1,5 @@
+⚠️ This service has been deprecated from 2025/4/8  
+
 # Line Bot Project Tracker v0.2
 
 幫你管理各種 side project 點子的小幫手  
