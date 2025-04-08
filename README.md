@@ -14,7 +14,7 @@
 ✅ 每天發通知提醒你討論專案  
 🚧 查看和匯出各專案的對話紀錄  
 
-開發日誌: [notion](https://tanimalx.notion.site/Line-Pre-assessment-15957b83ce5b8076ba8de5f45839909c?pvs=4)
+開發日誌: [notion](https://tanimalx.notion.site/Line-bot-project-tracker-1a857b83ce5b807a8edfef5415d20a44?pvs=4)
 
 ## 操作方法
 Demo Video: [youtube (shorts)](https://www.youtube.com/shorts/EQRYWOKQ2_Y)  
